@@ -1,0 +1,136 @@
+name: Verify Fast-Forward
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_repo:
+        description: 'Upstream repository (owner/repo)'
+        required: false
+        default: '2004Scape/Client'
+      upstream_branch:
+        description: 'Upstream branch to check against'
+        required: false
+        default: 'main'
+      local_branch:
+        description: 'Local branch to verify'
+        required: false
+        default: '245.2'
+
+env:
+  # Default upstream repository - can be overridden via workflow_dispatch
+  UPSTREAM_REPO: '2004Scape/Client'
+  UPSTREAM_BRANCH: 'main'
+  LOCAL_BRANCH: '245.2'
+
+jobs:
+  verify-fast-forward:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.local_branch || env.LOCAL_BRANCH }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          UPSTREAM="${{ github.event.inputs.upstream_repo || env.UPSTREAM_REPO }}"
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          git fetch upstream
+
+      - name: Verify fast-forward capability
+        run: |
+          LOCAL="${{ github.event.inputs.local_branch || env.LOCAL_BRANCH }}"
+          UPSTREAM="${{ github.event.inputs.upstream_repo || env.UPSTREAM_REPO }}"
+          UPSTREAM_BRANCH="${{ github.event.inputs.upstream_branch || env.UPSTREAM_BRANCH }}"
+          
+          echo "Checking if branch '$LOCAL' can fast-forward to upstream/$UPSTREAM_BRANCH from $UPSTREAM"
+          
+          # Get the current commit of the local branch
+          LOCAL_COMMIT=$(git rev-parse $LOCAL)
+          echo "Local branch commit: $LOCAL_COMMIT"
+          
+          # Get the latest commit from upstream branch
+          UPSTREAM_COMMIT=$(git rev-parse upstream/$UPSTREAM_BRANCH)
+          echo "Upstream branch commit: $UPSTREAM_COMMIT"
+          
+          # Check if local branch is an ancestor of upstream branch
+          # This means the local branch can fast-forward to upstream
+          if git merge-base --is-ancestor $LOCAL_COMMIT $UPSTREAM_COMMIT; then
+            echo "✅ SUCCESS: Branch '$LOCAL' can fast-forward to upstream/$UPSTREAM_BRANCH"
+            echo "No divergent commits detected."
+            exit 0
+          else
+            echo "❌ FAILURE: Branch '$LOCAL' cannot fast-forward to upstream/$UPSTREAM_BRANCH"
+            echo ""
+            echo "This means the branches have diverged, and a merge would be required."
+            echo ""
+            echo "Commits in '$LOCAL' not in upstream/$UPSTREAM_BRANCH:"
+            git log --oneline $UPSTREAM_COMMIT..$LOCAL_COMMIT || true
+            echo ""
+            echo "Commits in upstream/$UPSTREAM_BRANCH not in '$LOCAL':"
+            git log --oneline $LOCAL_COMMIT..$UPSTREAM_COMMIT || true
+            exit 1
+          fi
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const localBranch = '${{ github.event.inputs.local_branch || env.LOCAL_BRANCH }}';
+            const upstreamRepo = '${{ github.event.inputs.upstream_repo || env.UPSTREAM_REPO }}';
+            const upstreamBranch = '${{ github.event.inputs.upstream_branch || env.UPSTREAM_BRANCH }}';
+            
+            const title = `Branch ${localBranch} cannot fast-forward to upstream`;
+            const body = `The branch \`${localBranch}\` cannot fast-forward to \`${upstreamBranch}\` from upstream repository \`${upstreamRepo}\`.
+            
+            This indicates that the branches have diverged and manual intervention is required.
+            
+            **Actions Required:**
+            1. Review the commits in both branches
+            2. Decide whether to:
+               - Rebase the local branch onto upstream
+               - Merge upstream changes into the local branch
+               - Keep branches separate if intentional divergence
+            
+            **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+            
+            // Check if an issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'fast-forward-check'
+            });
+            
+            const existingIssue = issues.data.find(issue => issue.title === title);
+            
+            if (existingIssue) {
+              // Update existing issue with new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `Fast-forward check failed again.\n\n${body}`
+              });
+              console.log(`Updated existing issue #${existingIssue.number}`);
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['fast-forward-check', 'automated']
+              });
+              console.log('Created new issue');
+            }
