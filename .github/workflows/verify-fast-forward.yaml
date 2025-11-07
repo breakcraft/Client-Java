@@ -55,16 +55,16 @@ jobs:
           echo "Checking if branch '$LOCAL' can fast-forward to upstream/$UPSTREAM_BRANCH from $UPSTREAM"
           
           # Get the current commit of the local branch
-          LOCAL_COMMIT=$(git rev-parse $LOCAL)
+          LOCAL_COMMIT=$(git rev-parse "$LOCAL")
           echo "Local branch commit: $LOCAL_COMMIT"
           
           # Get the latest commit from upstream branch
-          UPSTREAM_COMMIT=$(git rev-parse upstream/$UPSTREAM_BRANCH)
+          UPSTREAM_COMMIT=$(git rev-parse "upstream/$UPSTREAM_BRANCH")
           echo "Upstream branch commit: $UPSTREAM_COMMIT"
           
           # Check if local branch is an ancestor of upstream branch
           # This means the local branch can fast-forward to upstream
-          if git merge-base --is-ancestor $LOCAL_COMMIT $UPSTREAM_COMMIT; then
+          if git merge-base --is-ancestor "$LOCAL_COMMIT" "$UPSTREAM_COMMIT"; then
             echo "✅ SUCCESS: Branch '$LOCAL' can fast-forward to upstream/$UPSTREAM_BRANCH"
             echo "No divergent commits detected."
             exit 0
@@ -74,10 +74,10 @@ jobs:
             echo "This means the branches have diverged, and a merge would be required."
             echo ""
             echo "Commits in '$LOCAL' not in upstream/$UPSTREAM_BRANCH:"
-            git log --oneline $UPSTREAM_COMMIT..$LOCAL_COMMIT || true
+            git log --oneline "$UPSTREAM_COMMIT..$LOCAL_COMMIT" || true
             echo ""
             echo "Commits in upstream/$UPSTREAM_BRANCH not in '$LOCAL':"
-            git log --oneline $LOCAL_COMMIT..$UPSTREAM_COMMIT || true
+            git log --oneline "$LOCAL_COMMIT..$UPSTREAM_COMMIT" || true
             exit 1
           fi
 
