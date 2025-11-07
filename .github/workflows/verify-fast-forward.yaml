@@ -55,11 +55,17 @@ jobs:
           echo "Checking if branch '$LOCAL' can fast-forward to upstream/$UPSTREAM_BRANCH from $UPSTREAM"
           
           # Get the current commit of the local branch
-          LOCAL_COMMIT=$(git rev-parse "$LOCAL")
+          if ! LOCAL_COMMIT=$(git rev-parse "$LOCAL" 2>&1); then
+            echo "❌ ERROR: Local branch '$LOCAL' does not exist"
+            exit 1
+          fi
           echo "Local branch commit: $LOCAL_COMMIT"
           
           # Get the latest commit from upstream branch
-          UPSTREAM_COMMIT=$(git rev-parse "upstream/$UPSTREAM_BRANCH")
+          if ! UPSTREAM_COMMIT=$(git rev-parse "upstream/$UPSTREAM_BRANCH" 2>&1); then
+            echo "❌ ERROR: Upstream branch 'upstream/$UPSTREAM_BRANCH' does not exist"
+            exit 1
+          fi
           echo "Upstream branch commit: $UPSTREAM_COMMIT"
           
           # Check if local branch is an ancestor of upstream branch
